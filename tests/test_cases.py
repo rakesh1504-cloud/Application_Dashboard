@@ -1,4 +1,7 @@
-from cms.db import get_db
+import sqlalchemy as sa
+
+from cms.db import db
+from cms.models import CaseNote
 
 
 def _create_case(client, **overrides):
@@ -80,9 +83,20 @@ def test_only_admin_can_delete(app, auth, client):
     resp = client.post("/cases/1/delete", follow_redirects=True)
     assert b"deleted" in resp.data
     with app.app_context():
-        assert get_db().execute("SELECT COUNT(*) FROM case_note").fetchone()[0] == 0
+        assert db.session.scalar(sa.select(sa.func.count(CaseNote.id))) == 0
 
 
 def test_missing_case_404(auth, client):
     auth.register()
     assert client.get("/cases/999").status_code == 404
+
+
+def test_edit_without_changes(auth, client):
+    auth.register()
+    _create_case(client)
+    resp = client.post("/cases/1/edit", data={
+        "title": "Billing dispute", "client_name": "Acme Corp",
+        "description": "Customer disputes invoice #42.", "status": "Open",
+        "priority": "High", "assigned_to": "1", "due_date": "",
+    }, follow_redirects=True)
+    assert b"No changes to save." in resp.data

@@ -10,6 +10,7 @@
   <div class="actions">
     <a class="btn btn-secondary" href="{{ url_for('cases.edit_case', case_id=case.id) }}">Edit</a>
     {% if current_user.is_admin %}
+    <a class="btn btn-secondary" href="{{ url_for('audit.audit_log', case_id=case.id) }}">Audit trail</a>
     <form method="post" action="{{ url_for('cases.delete_case', case_id=case.id) }}"
           onsubmit="return confirm('Delete this case permanently?');">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

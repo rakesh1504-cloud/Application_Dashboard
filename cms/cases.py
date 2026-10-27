@@ -1,51 +1,56 @@
+import sqlalchemy as sa
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy.orm import joinedload
 
-from .db import get_db
+from .audit import log_event
+from .db import db
 from .forms import CaseForm, NoteForm
-from .models import PRIORITIES, STATUSES, User
+from .models import PRIORITIES, STATUSES, Case, CaseNote, User, utcnow
 
 bp = Blueprint("cases", __name__)
 
-CASE_SELECT = """
-    SELECT c.*, a.full_name AS assignee_name, cr.full_name AS creator_name
-    FROM cases c
-    LEFT JOIN user a ON a.id = c.assigned_to
-    JOIN user cr ON cr.id = c.created_by
-"""
+# Fields whose before/after values are recorded in the audit log on edit.
+TRACKED_FIELDS = ["title", "client_name", "description", "status", "priority", "assigned_to", "due_date"]
 
 
 def get_case(case_id):
-    case = get_db().execute(CASE_SELECT + " WHERE c.id = ?", (case_id,)).fetchone()
+    case = db.session.get(Case, case_id)
     if case is None:
         abort(404)
     return case
 
 
 def _assignee_choices():
-    return [(0, "— Unassigned —")] + [(u["id"], u["full_name"]) for u in User.all()]
+    return [(0, "— Unassigned —")] + [(u.id, u.full_name) for u in User.all()]
 
 
-def _add_note(case_id, body):
-    get_db().execute(
-        "INSERT INTO case_note (case_id, author_id, body) VALUES (?, ?, ?)",
-        (case_id, current_user.id, body),
-    )
+def _add_note(case, body):
+    db.session.add(CaseNote(case=case, author_id=current_user.id, body=body))
+
+
+def _jsonable(value):
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+def _recent_cases():
+    return sa.select(Case).options(joinedload(Case.assignee)).order_by(Case.updated_at.desc())
 
 
 @bp.route("/dashboard")
 @login_required
 def dashboard():
-    db = get_db()
     counts = {s: 0 for s in STATUSES}
-    for row in db.execute("SELECT status, COUNT(*) AS n FROM cases GROUP BY status"):
-        counts[row["status"]] = row["n"]
-    my_cases = db.execute(
-        CASE_SELECT + " WHERE c.assigned_to = ? AND c.status != 'Closed'"
-        " ORDER BY c.updated_at DESC LIMIT 10",
-        (current_user.id,),
-    ).fetchall()
-    recent = db.execute(CASE_SELECT + " ORDER BY c.updated_at DESC LIMIT 5").fetchall()
+    for status, n in db.session.execute(
+        sa.select(Case.status, sa.func.count(Case.id)).group_by(Case.status)
+    ):
+        counts[status] = n
+    my_cases = db.session.scalars(
+        _recent_cases()
+        .filter(Case.assigned_to == current_user.id, Case.status != "Closed")
+        .limit(10)
+    ).all()
+    recent = db.session.scalars(_recent_cases().limit(5)).all()
     return render_template(
         "dashboard.html",
         counts=counts,
@@ -63,31 +68,25 @@ def list_cases():
     priority = request.args.get("priority", "")
     mine = request.args.get("mine") == "1"
 
-    clauses, params = [], []
+    query = _recent_cases()
     if q:
-        clauses.append("(c.title LIKE ? OR c.client_name LIKE ? OR c.description LIKE ?)")
-        params += [f"%{q}%"] * 3
+        like = f"%{q}%"
+        query = query.filter(
+            sa.or_(Case.title.ilike(like), Case.client_name.ilike(like), Case.description.ilike(like))
+        )
     if status in STATUSES:
-        clauses.append("c.status = ?")
-        params.append(status)
+        query = query.filter(Case.status == status)
     if priority in PRIORITIES:
-        clauses.append("c.priority = ?")
-        params.append(priority)
+        query = query.filter(Case.priority == priority)
     if mine:
-        clauses.append("c.assigned_to = ?")
-        params.append(current_user.id)
+        query = query.filter(Case.assigned_to == current_user.id)
+    cases = db.session.scalars(query).all()
 
-    sql = CASE_SELECT
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY c.updated_at DESC"
-    cases = get_db().execute(sql, params).fetchall()
+    filters = {"q": q, "status": status, "priority": priority, "mine": mine}
+    log_event("case.list_viewed", details={k: v for k, v in filters.items() if v} or None)
+    db.session.commit()
     return render_template(
-        "cases/list.html",
-        cases=cases,
-        statuses=STATUSES,
-        priorities=PRIORITIES,
-        filters={"q": q, "status": status, "priority": priority, "mine": mine},
+        "cases/list.html", cases=cases, statuses=STATUSES, priorities=PRIORITIES, filters=filters
     )
 
 
@@ -99,25 +98,27 @@ def create_case():
     if request.method == "GET":
         form.assigned_to.data = current_user.id
     if form.validate_on_submit():
-        db = get_db()
-        cur = db.execute(
-            "INSERT INTO cases (title, client_name, description, status, priority,"
-            " assigned_to, created_by, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                form.title.data.strip(),
-                form.client_name.data.strip(),
-                form.description.data or "",
-                form.status.data,
-                form.priority.data,
-                form.assigned_to.data or None,
-                current_user.id,
-                form.due_date.data,
-            ),
+        case = Case(
+            title=form.title.data.strip(),
+            client_name=form.client_name.data.strip(),
+            description=form.description.data or "",
+            status=form.status.data,
+            priority=form.priority.data,
+            assigned_to=form.assigned_to.data or None,
+            created_by=current_user.id,
+            due_date=form.due_date.data,
         )
-        _add_note(cur.lastrowid, "Case opened.")
-        db.commit()
-        flash(f"Case CMS-{cur.lastrowid:05d} created.", "success")
-        return redirect(url_for("cases.view_case", case_id=cur.lastrowid))
+        db.session.add(case)
+        _add_note(case, "Case opened.")
+        db.session.flush()
+        log_event(
+            "case.created",
+            case_id=case.id,
+            details={f: _jsonable(getattr(case, f)) for f in TRACKED_FIELDS},
+        )
+        db.session.commit()
+        flash(f"Case {case.case_number} created.", "success")
+        return redirect(url_for("cases.view_case", case_id=case.id))
     return render_template("cases/form.html", form=form, case=None)
 
 
@@ -125,89 +126,93 @@ def create_case():
 @login_required
 def view_case(case_id):
     case = get_case(case_id)
-    notes = get_db().execute(
-        "SELECT n.*, u.full_name AS author_name FROM case_note n"
-        " JOIN user u ON u.id = n.author_id WHERE n.case_id = ?"
-        " ORDER BY n.created_at DESC, n.id DESC",
-        (case_id,),
-    ).fetchall()
-    return render_template("cases/detail.html", case=case, notes=notes, note_form=NoteForm())
+    log_event("case.viewed", case_id=case.id)
+    db.session.commit()
+    return render_template("cases/detail.html", case=case, notes=case.notes, note_form=NoteForm())
 
 
 @bp.route("/cases/<int:case_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_case(case_id):
     case = get_case(case_id)
-    form = CaseForm(data=None if request.method == "POST" else {
-        "title": case["title"],
-        "client_name": case["client_name"],
-        "description": case["description"],
-        "status": case["status"],
-        "priority": case["priority"],
-        "assigned_to": case["assigned_to"] or 0,
-        "due_date": case["due_date"],
-    })
+    form = CaseForm(obj=case if request.method == "GET" else None)
     form.assigned_to.choices = _assignee_choices()
+    if request.method == "GET":
+        form.assigned_to.data = case.assigned_to or 0
     if form.validate_on_submit():
-        db = get_db()
-        changes = []
-        if form.status.data != case["status"]:
-            changes.append(f"Status: {case['status']} → {form.status.data}")
-        if form.priority.data != case["priority"]:
-            changes.append(f"Priority: {case['priority']} → {form.priority.data}")
-        if (form.assigned_to.data or None) != case["assigned_to"]:
+        new = {
+            "title": form.title.data.strip(),
+            "client_name": form.client_name.data.strip(),
+            "description": form.description.data or "",
+            "status": form.status.data,
+            "priority": form.priority.data,
+            "assigned_to": form.assigned_to.data or None,
+            "due_date": form.due_date.data,
+        }
+        changes = {
+            f: [_jsonable(getattr(case, f)), _jsonable(v)]
+            for f, v in new.items()
+            if getattr(case, f) != v
+        }
+
+        timeline = []
+        if "status" in changes:
+            timeline.append(f"Status: {case.status} → {new['status']}")
+        if "priority" in changes:
+            timeline.append(f"Priority: {case.priority} → {new['priority']}")
+        if "assigned_to" in changes:
             names = dict(form.assigned_to.choices)
-            changes.append(
-                f"Reassigned: {case['assignee_name'] or 'Unassigned'}"
-                f" → {names.get(form.assigned_to.data, 'Unassigned')}"
+            timeline.append(
+                f"Reassigned: {case.assignee_name or 'Unassigned'}"
+                f" → {names.get(new['assigned_to'] or 0, 'Unassigned')}"
             )
-        db.execute(
-            "UPDATE cases SET title = ?, client_name = ?, description = ?, status = ?,"
-            " priority = ?, assigned_to = ?, due_date = ?, updated_at = CURRENT_TIMESTAMP"
-            " WHERE id = ?",
-            (
-                form.title.data.strip(),
-                form.client_name.data.strip(),
-                form.description.data or "",
-                form.status.data,
-                form.priority.data,
-                form.assigned_to.data or None,
-                form.due_date.data,
-                case_id,
-            ),
-        )
+
         if changes:
-            _add_note(case_id, "; ".join(changes))
-        db.commit()
-        flash("Case updated.", "success")
-        return redirect(url_for("cases.view_case", case_id=case_id))
+            for f, v in new.items():
+                setattr(case, f, v)
+            case.updated_at = utcnow()
+            if timeline:
+                _add_note(case, "; ".join(timeline))
+            log_event("case.updated", case_id=case.id, details={"changes": changes})
+            db.session.commit()
+            flash("Case updated.", "success")
+        else:
+            flash("No changes to save.", "info")
+        return redirect(url_for("cases.view_case", case_id=case.id))
     return render_template("cases/form.html", form=form, case=case)
 
 
 @bp.route("/cases/<int:case_id>/notes", methods=["POST"])
 @login_required
 def add_note(case_id):
-    get_case(case_id)
+    case = get_case(case_id)
     form = NoteForm()
     if form.validate_on_submit():
-        db = get_db()
-        _add_note(case_id, form.body.data.strip())
-        db.execute("UPDATE cases SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (case_id,))
-        db.commit()
+        note = CaseNote(case=case, author_id=current_user.id, body=form.body.data.strip())
+        db.session.add(note)
+        case.updated_at = utcnow()
+        db.session.flush()
+        log_event("case.note_added", case_id=case.id, details={"note_id": note.id})
+        db.session.commit()
         flash("Note added.", "success")
     else:
         flash("Note cannot be empty.", "error")
-    return redirect(url_for("cases.view_case", case_id=case_id))
+    return redirect(url_for("cases.view_case", case_id=case.id))
 
 
 @bp.route("/cases/<int:case_id>/delete", methods=["POST"])
 @login_required
 def delete_case(case_id):
-    get_case(case_id)
+    case = get_case(case_id)
     if not current_user.is_admin:
+        log_event("case.delete_denied", case_id=case.id)
+        db.session.commit()
         abort(403)
-    db = get_db()
-    db.execute("DELETE FROM cases WHERE id = ?", (case_id,))
-    db.commit()
-    flash(f"Case CMS-{case_id:05d} deleted.", "info")
+    snapshot = {f: _jsonable(getattr(case, f)) for f in TRACKED_FIELDS}
+    snapshot["note_count"] = len(case.notes)
+    number = case.case_number
+    db.session.delete(case)
+    log_event("case.deleted", case_id=case_id, details=snapshot)
+    db.session.commit()
+    flash(f"Case {number} deleted.", "info")
     return redirect(url_for("cases.list_cases"))

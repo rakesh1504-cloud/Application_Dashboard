@@ -1,20 +1,36 @@
+import os
+
 import pytest
 
 from cms import create_app
-from cms.db import init_db
+from cms.db import database_url, db
+
+# Set TEST_DATABASE_URL (e.g. a throwaway Postgres database) to run the suite
+# against that database instead of a temporary SQLite file. All its tables
+# are dropped and recreated for every test.
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 
 
 @pytest.fixture
 def app(tmp_path):
+    if TEST_DATABASE_URL:
+        uri = database_url("", {"DATABASE_URL": TEST_DATABASE_URL})
+    else:
+        uri = f"sqlite:///{tmp_path / 'test.sqlite'}"
     app = create_app({
         "TESTING": True,
-        "DATABASE": str(tmp_path / "test.sqlite"),
+        "SQLALCHEMY_DATABASE_URI": uri,
         "WTF_CSRF_ENABLED": False,
         "SECRET_KEY": "test",
     })
     with app.app_context():
-        init_db()
+        db.drop_all()
+        db.create_all()
     yield app
+    with app.app_context():
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
 
 
 @pytest.fixture

@@ -1,0 +1,20 @@
+# Local PostgreSQL for development: `docker compose up -d`
+# then set DATABASE_URL=postgresql://cms_app:cms_dev_pw@localhost:5432/cms
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: cms_app
+      POSTGRES_PASSWORD: cms_dev_pw
+      POSTGRES_DB: cms
+    ports:
+      - "5432:5432"
+    volumes:
+      - cms_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cms_app -d cms"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  cms_pgdata:

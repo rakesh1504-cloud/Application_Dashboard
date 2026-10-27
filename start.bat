@@ -4,7 +4,8 @@ cd /d "%~dp0"
 if not exist .venv (
     echo Setting up for the first time...
     python -m venv .venv || (echo Python is not installed. Get it from https://www.python.org/downloads/ & pause & exit /b 1)
-    .venv\Scripts\python -m pip install -r requirements.txt
 )
+REM Installs anything new in requirements.txt; quick when nothing changed.
+.venv\Scripts\python -m pip install -q -r requirements.txt
 .venv\Scripts\python run.py
 pause

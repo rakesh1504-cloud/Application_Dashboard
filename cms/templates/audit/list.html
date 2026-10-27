@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import case_no %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Audit log</h1>
+    <p class="muted">Every sign-in and case-related request, newest first.</p>
+  </div>
+</div>
+
+<form class="filters" method="get">
+  <select name="action">
+    <option value="">All actions</option>
+    {% for a in actions %}<option {{ 'selected' if filters.action == a }}>{{ a }}</option>{% endfor %}
+  </select>
+  <input type="text" name="user" placeholder="Username" value="{{ filters.user }}">
+  <input type="number" name="case_id" placeholder="Case ID" min="1" value="{{ filters.case_id }}">
+  <button class="btn btn-secondary">Filter</button>
+  <a href="{{ url_for('audit.audit_log') }}" class="muted small">Reset</a>
+</form>
+
+<div class="card table-wrap">
+  {% if entries.items %}
+  <table>
+    <thead>
+      <tr><th>When (UTC)</th><th>User</th><th>Action</th><th>Case</th><th>Details</th><th>IP</th></tr>
+    </thead>
+    <tbody>
+      {% for e in entries.items %}
+      <tr>
+        <td class="small">{{ e.created_at.strftime('%d %b %Y %H:%M:%S') }}</td>
+        <td>{{ e.username or '—' }}</td>
+        <td><code>{{ e.action }}</code></td>
+        <td>{% if e.case_id %}<a class="case-no" href="{{ url_for('audit.audit_log', case_id=e.case_id) }}">{{ case_no(e.case_id) }}</a>{% else %}—{% endif %}</td>
+        <td class="small audit-details">{{ e.details | tojson if e.details else '' }}</td>
+        <td class="small muted">{{ e.ip_address or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted empty">No audit entries match these filters.</p>
+  {% endif %}
+</div>
+
+{% if entries.pages > 1 %}
+<nav class="pager">
+  {% set args = request.args.to_dict() %}
+  {% if entries.has_prev %}{% set _ = args.update(page=entries.prev_num) %}<a href="{{ url_for('audit.audit_log', **args) }}">← Newer</a>{% endif %}
+  <span class="muted small">Page {{ entries.page }} of {{ entries.pages }}</span>
+  {% if entries.has_next %}{% set _ = args.update(page=entries.next_num) %}<a href="{{ url_for('audit.audit_log', **args) }}">Older →</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

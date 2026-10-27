@@ -15,6 +15,9 @@
   <nav>
     <a href="{{ url_for('cases.dashboard') }}" class="{{ 'active' if request.endpoint == 'cases.dashboard' }}">Dashboard</a>
     <a href="{{ url_for('cases.list_cases') }}" class="{{ 'active' if request.endpoint == 'cases.list_cases' }}">Cases</a>
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('audit.audit_log') }}" class="{{ 'active' if request.endpoint == 'audit.audit_log' }}">Audit log</a>
+    {% endif %}
     <a href="{{ url_for('cases.create_case') }}" class="btn btn-sm">+ New case</a>
   </nav>
   <div class="user">
