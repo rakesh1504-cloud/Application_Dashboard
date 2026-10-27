@@ -16,6 +16,13 @@ It's built with Flask and SQLite.
 
 ## Quick start
 
+**Windows:** double-click `start.bat`. **macOS/Linux:** run `./start.sh`.
+The first run sets everything up. When the window shows *"CMS is running"*,
+open http://127.0.0.1:5000. Keep that window open while you use the app,
+because closing it stops the server.
+
+### Manual setup
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
