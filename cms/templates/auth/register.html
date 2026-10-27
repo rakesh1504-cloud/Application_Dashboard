@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field %}
+{% block title %}Create account{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block main_class %}auth-wrap{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <div class="auth-head">
+    <span class="logo logo-lg">CMS</span>
+    <h1>Create your account</h1>
+    <p class="muted">{{ portal_name }}</p>
+  </div>
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+    {{ field(form.full_name, autofocus=true) }}
+    {{ field(form.username, autocomplete="username") }}
+    {{ field(form.email, autocomplete="email") }}
+    {{ field(form.password, autocomplete="new-password") }}
+    {{ field(form.confirm, autocomplete="new-password") }}
+    <button class="btn btn-block" type="submit">Create account</button>
+  </form>
+  <p class="auth-foot">Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% macro field(f, cls="") %}
+<div class="field {{ cls }}">
+  {{ f.label }}
+  {{ f(**kwargs) }}
+  {% for e in f.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+</div>
+{% endmacro %}
+
+{% macro badge(value) -%}
+<span class="badge badge-{{ value|lower|replace(' ', '-') }}">{{ value }}</span>
+{%- endmacro %}
+
+{% macro case_no(id) %}CMS-{{ '%05d' % id }}{% endmacro %}

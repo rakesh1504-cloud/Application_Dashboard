@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field, case_no %}
+{% block title %}{{ 'Edit ' ~ case_no(case.id) if case else 'New case' }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Edit ' ~ case_no(case.id) if case else 'Open a new case' }}</h1>
+</div>
+<form method="post" class="card form-grid" novalidate>
+  {{ form.hidden_tag() }}
+  {{ field(form.title, cls="span-2") }}
+  {{ field(form.client_name) }}
+  {{ field(form.due_date) }}
+  {{ field(form.status) }}
+  {{ field(form.priority) }}
+  {{ field(form.assigned_to, cls="span-2") }}
+  {{ field(form.description, cls="span-2", rows=6) }}
+  <div class="span-2 actions">
+    <button class="btn" type="submit">{{ 'Save changes' if case else 'Create case' }}</button>
+    <a class="btn btn-secondary" href="{{ url_for('cases.view_case', case_id=case.id) if case else url_for('cases.list_cases') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

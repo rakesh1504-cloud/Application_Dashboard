@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, case_no %}
+{% block title %}Cases{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Cases</h1>
+  <a class="btn" href="{{ url_for('cases.create_case') }}">+ New case</a>
+</div>
+
+<form class="filters" method="get">
+  <input type="search" name="q" placeholder="Search title, client, description…" value="{{ filters.q }}">
+  <select name="status">
+    <option value="">All statuses</option>
+    {% for s in statuses %}<option {{ 'selected' if filters.status == s }}>{{ s }}</option>{% endfor %}
+  </select>
+  <select name="priority">
+    <option value="">All priorities</option>
+    {% for p in priorities %}<option {{ 'selected' if filters.priority == p }}>{{ p }}</option>{% endfor %}
+  </select>
+  <label class="check"><input type="checkbox" name="mine" value="1" {{ 'checked' if filters.mine }}> Assigned to me</label>
+  <button class="btn btn-secondary">Filter</button>
+  <a href="{{ url_for('cases.list_cases') }}" class="muted small">Reset</a>
+</form>
+
+<div class="card table-wrap">
+  {% if cases %}
+  <table>
+    <thead>
+      <tr><th>Case #</th><th>Title</th><th>Client</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Updated</th></tr>
+    </thead>
+    <tbody>
+      {% for c in cases %}
+      <tr>
+        <td><a class="case-no" href="{{ url_for('cases.view_case', case_id=c.id) }}">{{ case_no(c.id) }}</a></td>
+        <td><a href="{{ url_for('cases.view_case', case_id=c.id) }}">{{ c.title }}</a></td>
+        <td>{{ c.client_name }}</td>
+        <td>{{ badge(c.status) }}</td>
+        <td>{{ badge(c.priority) }}</td>
+        <td>{{ c.assignee_name or '—' }}</td>
+        <td>{{ c.due_date.strftime('%d %b %Y') if c.due_date else '—' }}</td>
+        <td class="muted small">{{ c.updated_at.strftime('%d %b %Y') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted empty">No cases match these filters.</p>
+  {% endif %}
+</div>
+{% endblock %}

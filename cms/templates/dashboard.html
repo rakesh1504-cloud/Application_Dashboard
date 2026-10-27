@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, case_no %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="muted">Welcome, {{ current_user.full_name }}.</p>
+  </div>
+  <a class="btn" href="{{ url_for('cases.create_case') }}">+ New case</a>
+</div>
+
+<section class="stats">
+  <a class="stat" href="{{ url_for('cases.list_cases') }}">
+    <span class="stat-label">Total cases</span><span class="stat-value">{{ total }}</span>
+  </a>
+  {% for status, n in counts.items() %}
+  <a class="stat stat-{{ status|lower|replace(' ', '-') }}" href="{{ url_for('cases.list_cases', status=status) }}">
+    <span class="stat-label">{{ status }}</span><span class="stat-value">{{ n }}</span>
+  </a>
+  {% endfor %}
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>My open cases</h2>
+    {% if my_cases %}
+    <ul class="case-list">
+      {% for c in my_cases %}
+      <li>
+        <a href="{{ url_for('cases.view_case', case_id=c.id) }}">
+          <span class="case-no">{{ case_no(c.id) }}</span> {{ c.title }}
+        </a>
+        <span>{{ badge(c.priority) }} {{ badge(c.status) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">Nothing assigned to you right now.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Recently updated</h2>
+    {% if recent %}
+    <ul class="case-list">
+      {% for c in recent %}
+      <li>
+        <a href="{{ url_for('cases.view_case', case_id=c.id) }}">
+          <span class="case-no">{{ case_no(c.id) }}</span> {{ c.title }}
+        </a>
+        <span class="muted small">{{ c.updated_at.strftime('%d %b %Y %H:%M') }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">No cases yet. <a href="{{ url_for('cases.create_case') }}">Open the first one.</a></p>{% endif %}
+  </section>
+</div>
+{% endblock %}

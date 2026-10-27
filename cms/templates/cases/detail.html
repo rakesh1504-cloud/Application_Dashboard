@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, case_no, field %}
+{% block title %}{{ case_no(case.id) }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="case-no">{{ case_no(case.id) }}</p>
+    <h1>{{ case.title }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-secondary" href="{{ url_for('cases.edit_case', case_id=case.id) }}">Edit</a>
+    {% if current_user.is_admin %}
+    <form method="post" action="{{ url_for('cases.delete_case', case_id=case.id) }}"
+          onsubmit="return confirm('Delete this case permanently?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-2 detail">
+  <section class="card">
+    <h2>Description</h2>
+    <p class="pre">{{ case.description or 'No description provided.' }}</p>
+
+    <h2>Notes &amp; activity</h2>
+    <form method="post" action="{{ url_for('cases.add_note', case_id=case.id) }}" class="note-form">
+      {{ note_form.hidden_tag() }}
+      {{ field(note_form.body, rows=3, placeholder="Write an update…") }}
+      <button class="btn btn-sm">Add note</button>
+    </form>
+    <ul class="timeline">
+      {% for n in notes %}
+      <li>
+        <div class="tl-meta"><strong>{{ n.author_name }}</strong>
+          <span class="muted small">{{ n.created_at.strftime('%d %b %Y %H:%M') }}</span></div>
+        <p class="pre">{{ n.body }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <aside class="card">
+    <h2>Details</h2>
+    <dl class="meta">
+      <dt>Status</dt><dd>{{ badge(case.status) }}</dd>
+      <dt>Priority</dt><dd>{{ badge(case.priority) }}</dd>
+      <dt>Client</dt><dd>{{ case.client_name }}</dd>
+      <dt>Assigned to</dt><dd>{{ case.assignee_name or 'Unassigned' }}</dd>
+      <dt>Due date</dt><dd>{{ case.due_date.strftime('%d %b %Y') if case.due_date else '—' }}</dd>
+      <dt>Opened by</dt><dd>{{ case.creator_name }}</dd>
+      <dt>Created</dt><dd>{{ case.created_at.strftime('%d %b %Y %H:%M') }}</dd>
+      <dt>Last updated</dt><dd>{{ case.updated_at.strftime('%d %b %Y %H:%M') }}</dd>
+    </dl>
+  </aside>
+</div>
+{% endblock %}
